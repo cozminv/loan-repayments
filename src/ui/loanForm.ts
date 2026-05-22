@@ -1,8 +1,9 @@
 import type { LoanFormSnapshot } from '../engine/bankReferences.ts';
 import { effectiveAnnualRate } from '../engine/amortize.ts';
-import { formValuesToRateConfig } from './rateConfig.ts';
+import { annuityPayment } from '../engine/annuity.ts';
+import { formValuesToRateConfig, snapshotToRateConfig } from './rateConfig.ts';
 import { termMonthsFromTargetPayment } from '../engine/termFromPayment.ts';
-import type { ComparisonMode, Currency, ExtraStrategy, RateMode, RepaymentType } from '../engine/types.ts';
+import type { Currency, ExtraStrategy, RateMode, RepaymentType } from '../engine/types.ts';
 
 export interface LoanFormValues {
   principal: number;
@@ -13,11 +14,9 @@ export interface LoanFormValues {
   fixedPeriodYears: number;
   irccPercent: number;
   marginPercent: number;
-  comparisonMode: ComparisonMode;
   targetMonthlyPayment: number;
   termShortYears: number;
   termLongYears: number;
-  extraOverride?: number;
   extraStrategy: ExtraStrategy;
 }
 
@@ -30,11 +29,9 @@ const FIELD_IDS = {
   fixedPeriodYears: 'fixedPeriodYears',
   ircc: 'ircc',
   margin: 'margin',
-  comparisonMode: 'comparisonMode',
   targetMonthly: 'targetMonthly',
   termShort: 'termShort',
   termLong: 'termLong',
-  extraOverride: 'extraOverride',
   extraStrategy: 'extraStrategy',
 } as const;
 
@@ -47,7 +44,6 @@ function select(id: string): HTMLSelectElement {
 }
 
 export function readFormValues(): LoanFormValues {
-  const extraRaw = input(FIELD_IDS.extraOverride).value;
   return {
     principal: parseFloat(input(FIELD_IDS.principal).value),
     currency: select(FIELD_IDS.currency).value as Currency,
@@ -57,13 +53,25 @@ export function readFormValues(): LoanFormValues {
     fixedPeriodYears: parseInt(input(FIELD_IDS.fixedPeriodYears).value, 10),
     irccPercent: parseFloat(input(FIELD_IDS.ircc).value),
     marginPercent: parseFloat(input(FIELD_IDS.margin).value),
-    comparisonMode: select(FIELD_IDS.comparisonMode).value as ComparisonMode,
     targetMonthlyPayment: parseFloat(input(FIELD_IDS.targetMonthly).value),
     termShortYears: parseInt(input(FIELD_IDS.termShort).value, 10),
     termLongYears: parseInt(input(FIELD_IDS.termLong).value, 10),
-    extraOverride: extraRaw ? parseFloat(extraRaw) : undefined,
     extraStrategy: select(FIELD_IDS.extraStrategy).value as ExtraStrategy,
   };
+}
+
+function targetMonthlyFromSnapshot(snapshot: LoanFormSnapshot): number {
+  if (snapshot.expectedMonthlyPayment != null) {
+    return snapshot.expectedMonthlyPayment;
+  }
+  const rate = snapshotToRateConfig(snapshot);
+  const annualRate = effectiveAnnualRate(rate, 1);
+  const months = snapshot.termShortYears * 12;
+  if (snapshot.repaymentType === 'annuity') {
+    return annuityPayment(snapshot.principal, annualRate, months);
+  }
+  const r = annualRate / 100 / 12;
+  return snapshot.principal / months + snapshot.principal * r;
 }
 
 export function applyFormSnapshot(snapshot: LoanFormSnapshot): void {
@@ -85,6 +93,34 @@ export function applyFormSnapshot(snapshot: LoanFormSnapshot): void {
   }
   input(FIELD_IDS.termShort).value = String(snapshot.termShortYears);
   input(FIELD_IDS.termLong).value = String(snapshot.termLongYears);
+  input(FIELD_IDS.targetMonthly).value = String(targetMonthlyFromSnapshot(snapshot));
+}
+
+/** Setează termen scurt (ani) din sumă lunară țintă; termenul poate fi editat după. */
+export function autofillShortTermFromTarget(): string | null {
+  const v = readFormValues();
+  const rate = formValuesToRateConfig(v);
+  const annualRate = effectiveAnnualRate(rate, 1);
+  const termLongMonths = v.termLongYears * 12;
+
+  const shortMonths = termMonthsFromTargetPayment(
+    v.principal,
+    annualRate,
+    v.targetMonthlyPayment,
+    v.repaymentType,
+  );
+
+  if (shortMonths == null) {
+    return 'Suma țintă este prea mică — nu acoperă dobânda la această sumă.';
+  }
+
+  if (shortMonths >= termLongMonths) {
+    return 'Termenul scurt derivat trebuie să fie mai mic decât termenul lung.';
+  }
+
+  const shortYears = Math.max(1, Math.round(shortMonths / 12));
+  input(FIELD_IDS.termShort).value = String(shortYears);
+  return null;
 }
 
 export function toggleRateFields(): void {
@@ -102,14 +138,6 @@ export function toggleRateFields(): void {
   marginWrap?.classList.toggle('hidden', mode === 'fixed');
 
   updateEffectiveRateDisplay();
-  updateComputedTermHint();
-}
-
-export function toggleComparisonFields(): void {
-  const mode = select(FIELD_IDS.comparisonMode).value;
-  document.getElementById('monthlyBudgetFields')?.classList.toggle('hidden', mode !== 'monthly_budget');
-  document.getElementById('fixedTermsFields')?.classList.toggle('hidden', mode !== 'fixed_terms');
-  updateComputedTermHint();
 }
 
 export function updateEffectiveRateDisplay(): void {
@@ -125,33 +153,7 @@ export function updateEffectiveRateDisplay(): void {
   el.textContent = `Dobândă variabilă (IRCC + marjă): ${(ircc + margin).toFixed(2)}%`;
 }
 
-export function updateComputedTermHint(): void {
-  const hint = document.getElementById('computedTermHint');
-  if (!hint || select(FIELD_IDS.comparisonMode).value !== 'monthly_budget') {
-    if (hint) hint.textContent = '';
-    return;
-  }
-
-  const v = readFormValues();
-  const rate = formValuesToRateConfig(v);
-  const annualRate = effectiveAnnualRate(rate, 1);
-  const months = termMonthsFromTargetPayment(
-    v.principal,
-    annualRate,
-    v.targetMonthlyPayment,
-    v.repaymentType,
-  );
-
-  if (months == null) {
-    hint.textContent = 'Bugetul lunar este prea mic — nu acoperă dobânda la această sumă.';
-    return;
-  }
-
-  const years = (months / 12).toFixed(1);
-  hint.textContent = `Termen scurt calculat: ${months} luni (≈ ${years} ani) la această rată lunară.`;
-}
-
-const STORAGE_KEY = 'loan-repayments-form-v2';
+const STORAGE_KEY = 'loan-repayments-form-v5';
 
 export function saveFormToStorage(): void {
   try {
@@ -163,7 +165,12 @@ export function saveFormToStorage(): void {
 
 export function loadFormFromStorage(): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('loan-repayments-form-v1');
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem('loan-repayments-form-v4') ??
+      localStorage.getItem('loan-repayments-form-v3') ??
+      localStorage.getItem('loan-repayments-form-v2') ??
+      localStorage.getItem('loan-repayments-form-v1');
     if (!raw) return false;
     const v = JSON.parse(raw) as Partial<LoanFormValues>;
     applyFormSnapshot({
@@ -178,9 +185,10 @@ export function loadFormFromStorage(): boolean {
       termShortYears: v.termShortYears ?? 20,
       termLongYears: v.termLongYears ?? 30,
     });
-    if (v.comparisonMode) select(FIELD_IDS.comparisonMode).value = v.comparisonMode;
-    if (v.targetMonthlyPayment) input(FIELD_IDS.targetMonthly).value = String(v.targetMonthlyPayment);
-    toggleComparisonFields();
+    if (v.targetMonthlyPayment) {
+      input(FIELD_IDS.targetMonthly).value = String(v.targetMonthlyPayment);
+    }
+    if (v.extraStrategy) select(FIELD_IDS.extraStrategy).value = v.extraStrategy;
     return true;
   } catch {
     return false;

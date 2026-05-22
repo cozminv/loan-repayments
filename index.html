@@ -103,34 +103,29 @@
 
         <fieldset class="fieldset">
           <legend>Comparație termen</legend>
-          <label class="full-width">
-            Mod comparație
-            <select id="comparisonMode">
-              <option value="monthly_budget" selected>Buget lunar fix → calculează termen scurt</option>
-              <option value="fixed_terms">Termene fixe (scurt vs lung + extra)</option>
-            </select>
-          </label>
           <div class="grid">
-            <label>
-              Termen lung (ani)
-              <input type="number" id="termLong" value="30" min="1" max="35" />
-            </label>
-          </div>
-          <div class="grid" id="monthlyBudgetFields">
-            <label>
-              Sumă lunară totală de platit
-              <input type="number" id="targetMonthly" value="2500" min="1" step="10" />
-            </label>
-            <p class="hint full-width" id="computedTermHint"></p>
-          </div>
-          <div class="grid hidden" id="fixedTermsFields">
             <label>
               Termen scurt (ani)
               <input type="number" id="termShort" value="20" min="1" max="35" />
             </label>
             <label>
-              Plată extra lunară (opțional)
-              <input type="number" id="extraOverride" placeholder="Auto: diferența ratelor" min="0" step="10" />
+              Termen lung (ani)
+              <input type="number" id="termLong" value="30" min="1" max="35" />
+            </label>
+            <label>
+              Sumă lunară țintă
+              <span class="input-inline">
+                <input type="number" id="targetMonthly" value="2500" min="1" step="10" />
+                <button
+                  type="button"
+                  id="autofillShortTerm"
+                  class="btn-inline secondary"
+                  title="Calculează termen scurt din sumă țintă"
+                  aria-label="Calculează termen scurt din sumă țintă"
+                >
+                  ↻
+                </button>
+              </span>
             </label>
             <label>
               La plată extra
@@ -140,6 +135,9 @@
               </select>
             </label>
           </div>
+          <p class="hint">
+            Plată extra (scurt și lung) = sumă țintă − rata contractuală la acel termen.
+          </p>
         </fieldset>
 
         <details class="bank-refs panel-inset">

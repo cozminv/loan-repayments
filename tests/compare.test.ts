@@ -1,32 +1,82 @@
 import { describe, it, expect } from 'vitest';
-import { compareScenarios } from '../src/engine/compareScenarios.ts';
+import {
+  compareScenarios,
+  extraFromTargetMonthly,
+} from '../src/engine/compareScenarios.ts';
 import { analyzeInvestVsPrepay } from '../src/engine/investBreakeven.ts';
 import { amortize } from '../src/engine/amortize.ts';
+import { annuityPayment } from '../src/engine/annuity.ts';
+
+describe('extraFromTargetMonthly', () => {
+  it('is target minus contractual payment, floored at 0', () => {
+    expect(extraFromTargetMonthly(1800, 2500)).toBe(700);
+    expect(extraFromTargetMonthly(2500, 2000)).toBe(0);
+  });
+});
 
 describe('compareScenarios', () => {
-  it('matches monthly outflow between short and long+extra', () => {
+  it('both scenarios match target when extra bridges contractual rates', () => {
+    const principal = 300_000;
+    const rate = 7.58;
+    const termShortMonths = 240;
+    const termLongMonths = 360;
+    const target = annuityPayment(principal, rate, termShortMonths);
+
     const c = compareScenarios({
-      principal: 300_000,
+      principal,
       repaymentType: 'annuity',
-      rate: { mode: 'fixed', fixedRatePercent: 7.58 },
-      comparisonMode: 'fixed_terms',
-      termShortMonths: 240,
-      termLongMonths: 360,
+      rate: { mode: 'fixed', fixedRatePercent: rate },
+      termShortMonths,
+      termLongMonths,
+      targetMonthlyPayment: target,
     });
-    expect(c.scenarioA.totalMonthly).toBeCloseTo(c.scenarioB.totalMonthly, 0);
-    expect(c.matchedMonthlyOutflow).toBeCloseTo(c.scenarioA.totalMonthly, 0);
+
+    expect(c.scenarioA.totalMonthly).toBeCloseTo(target, 0);
+    expect(c.scenarioB.totalMonthly).toBeCloseTo(target, 0);
+    expect(c.scenarioA.extraMonthly).toBe(0);
+    expect(c.scenarioB.extraMonthly).toBeGreaterThan(0);
   });
 
-  it('shorter term pays less or equal interest at matched monthly outflow', () => {
+  it('short term extra is target minus short contractual payment', () => {
+    const principal = 300_000;
+    const rate = 7.58;
+    const termShortMonths = 120;
+    const termLongMonths = 360;
+    const shortPayment = annuityPayment(principal, rate, termShortMonths);
+    const target = shortPayment + 400;
+
     const c = compareScenarios({
-      principal: 250_000,
+      principal,
       repaymentType: 'annuity',
-      rate: { mode: 'fixed', fixedRatePercent: 6.5 },
-      comparisonMode: 'fixed_terms',
-      termShortMonths: 120,
-      termLongMonths: 360,
+      rate: { mode: 'fixed', fixedRatePercent: rate },
+      termShortMonths,
+      termLongMonths,
+      targetMonthlyPayment: target,
     });
-    expect(c.scenarioA.totalInterest).toBeLessThanOrEqual(c.scenarioB.totalInterest + 1);
+
+    expect(c.scenarioA.extraMonthly).toBeCloseTo(400, 0);
+    expect(c.scenarioA.totalMonthly).toBeCloseTo(target, 0);
+    expect(c.scenarioB.extraMonthly).toBeGreaterThan(c.scenarioA.extraMonthly);
+  });
+
+  it('long term extra is target minus long contractual payment', () => {
+    const principal = 300_000;
+    const rate = 7.58;
+    const termLongMonths = 360;
+    const longPayment = annuityPayment(principal, rate, termLongMonths);
+    const target = longPayment + 500;
+
+    const c = compareScenarios({
+      principal,
+      repaymentType: 'annuity',
+      rate: { mode: 'fixed', fixedRatePercent: rate },
+      termShortMonths: 200,
+      termLongMonths,
+      targetMonthlyPayment: target,
+    });
+
+    expect(c.scenarioB.extraMonthly).toBeCloseTo(500, 0);
+    expect(c.scenarioB.totalMonthly).toBeCloseTo(target, 0);
   });
 });
 

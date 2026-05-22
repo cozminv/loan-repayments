@@ -46,18 +46,13 @@ export interface AmortizationResult {
   payoffMonths: number;
 }
 
-export type ComparisonMode = 'monthly_budget' | 'fixed_terms';
-
 export interface ComparisonInputs {
   principal: number;
   repaymentType: RepaymentType;
   rate: RateConfig;
-  comparisonMode?: ComparisonMode;
-  /** Used when comparisonMode is monthly_budget */
-  targetMonthlyPayment?: number;
   termShortMonths: number;
   termLongMonths: number;
-  extraMonthly?: number;
+  targetMonthlyPayment: number;
   extraStrategy?: ExtraStrategy;
   dayCountConvention?: DayCountConvention;
 }
@@ -75,9 +70,6 @@ export interface ScenarioSummary {
 }
 
 export interface ComparisonResult {
-  comparisonMode: ComparisonMode;
-  /** Term short derived from target monthly payment (monthly_budget mode) */
-  computedShortTermMonths?: number;
   scenarioA: ScenarioSummary;
   scenarioB: ScenarioSummary;
   interestDelta: number;

@@ -15,9 +15,8 @@ import {
   loadFormFromStorage,
   readFormValues,
   saveFormToStorage,
-  toggleComparisonFields,
   toggleRateFields,
-  updateComputedTermHint,
+  autofillShortTermFromTarget,
   type LoanFormValues,
 } from './ui/loanForm.ts';
 import { formValuesToRateConfig } from './ui/rateConfig.ts';
@@ -120,7 +119,6 @@ function loadBankExample(): void {
   }
   applyFormSnapshot(ref.snapshot);
   toggleRateFields();
-  toggleComparisonFields();
   loadedExamplePayment =
     ref.snapshot.expectedMonthlyPayment != null
       ? {
@@ -178,58 +176,41 @@ function run(): void {
   const v = readFormValues();
   saveFormToStorage();
 
-  const termLongMonths = v.termLongYears * 12;
   const termShortMonths = v.termShortYears * 12;
+  const termLongMonths = v.termLongYears * 12;
   const rate = formValuesToRateConfig(v);
 
-  let comparison;
-  try {
-    comparison = compareScenarios({
-      principal: v.principal,
-      repaymentType: v.repaymentType,
-      rate,
-      comparisonMode: v.comparisonMode,
-      targetMonthlyPayment: v.targetMonthlyPayment,
-      termShortMonths,
-      termLongMonths,
-      extraMonthly: v.extraOverride,
-      extraStrategy: v.extraStrategy,
-    });
-  } catch (err) {
-    alert(err instanceof Error ? err.message : 'Date invalide pentru comparație.');
+  if (termShortMonths >= termLongMonths) {
+    alert('Termenul scurt trebuie să fie mai mic decât termenul lung.');
     return;
   }
 
-  const shortMonths =
-    comparison.computedShortTermMonths ?? comparison.scenarioA.termMonths;
-  if (shortMonths >= termLongMonths) {
-    alert('Termenul scurt calculat trebuie să fie mai mic decât termenul lung.');
-    return;
-  }
+  const comparison = compareScenarios({
+    principal: v.principal,
+    repaymentType: v.repaymentType,
+    rate,
+    termShortMonths,
+    termLongMonths,
+    targetMonthlyPayment: v.targetMonthlyPayment,
+    extraStrategy: v.extraStrategy,
+  });
+
+  const shortMonths = termShortMonths;
 
   const { scenarioA: a, scenarioB: b, matchedMonthlyOutflow } = comparison;
 
   $('results').classList.remove('hidden');
   $('schedules').classList.remove('hidden');
 
-  const showInvest = v.comparisonMode === 'fixed_terms';
-  $('invest-section').classList.toggle('hidden', !showInvest);
-
   showPaymentCheck(v.currency, termLongMonths, v);
 
-  if (v.comparisonMode === 'monthly_budget') {
-    $('matchedOutflow').textContent = `Buget lunar: ${formatMoney(matchedMonthlyOutflow, v.currency)} → termen scurt ${formatMonths(shortMonths)} · termen lung ${formatMonths(termLongMonths)}`;
-  } else {
-    $('matchedOutflow').textContent = `Flux lunar egal: ${formatMoney(matchedMonthlyOutflow, v.currency)}/lună`;
-  }
+  $('matchedOutflow').textContent = `Țintă ${formatMoney(matchedMonthlyOutflow, v.currency)}/lună · scurt ${formatMonths(shortMonths)}: ${formatMoney(a.contractualPayment, v.currency)} + extra ${formatMoney(a.extraMonthly, v.currency)} · lung ${formatMonths(termLongMonths)}: ${formatMoney(b.contractualPayment, v.currency)} + extra ${formatMoney(b.extraMonthly, v.currency)}`;
 
   const winner =
     a.totalInterest < b.totalInterest
       ? 'Termenul scurt economisește dobândă'
       : b.totalInterest < a.totalInterest
-        ? v.comparisonMode === 'monthly_budget'
-          ? 'Termenul lung (rată contractuală) costă mai multă dobândă'
-          : 'Termenul lung + extra economisește dobândă'
+        ? 'Termenul lung + extra economisește dobândă'
         : 'Același cost al dobânzii';
 
   $('scenarioCards').innerHTML = `
@@ -237,7 +218,7 @@ function run(): void {
       <h3>${a.label}</h3>
       <dl>
         <dt>Rată contractuală</dt><dd>${formatMoney(a.contractualPayment, v.currency)}</dd>
-        <dt>Extra</dt><dd>—</dd>
+        <dt>Extra</dt><dd>${formatMoney(a.extraMonthly, v.currency)}</dd>
         <dt>Total lunar</dt><dd>${formatMoney(a.totalMonthly, v.currency)}</dd>
         <dt>Durată</dt><dd>${formatMonths(a.payoffMonths)}</dd>
         <dt>Dobândă totală</dt><dd>${formatMoney(a.totalInterest, v.currency)}</dd>
@@ -266,12 +247,6 @@ function run(): void {
   `;
 
   renderComparisonChart($('interestChart') as HTMLCanvasElement, a.result, b.result);
-
-  if (!showInvest) {
-    renderScheduleTable($('scheduleA'), a.result, v.currency, a.label);
-    renderScheduleTable($('scheduleB'), b.result, v.currency, b.label);
-    return;
-  }
 
   const baselineLong = amortize({
     principal: v.principal,
@@ -340,11 +315,10 @@ function bindFormListeners(): void {
   }
 
   $('rateMode').addEventListener('change', toggleRateFields);
-  $('comparisonMode').addEventListener('change', toggleComparisonFields);
-  for (const id of ['targetMonthly', 'principal', 'repaymentType', 'termLong']) {
-    document.getElementById(id)?.addEventListener('input', updateComputedTermHint);
-    document.getElementById(id)?.addEventListener('change', updateComputedTermHint);
-  }
+  $('autofillShortTerm').addEventListener('click', () => {
+    const err = autofillShortTermFromTarget();
+    if (err) alert(err);
+  });
   $('quickPreset').addEventListener('change', updatePresetDescription);
   $('applyPreset').addEventListener('click', applyQuickPreset);
   $('bankReference').addEventListener('change', updateBankRefMeta);
@@ -374,5 +348,4 @@ if (!loadFormFromStorage()) {
 }
 bindFormListeners();
 toggleRateFields();
-toggleComparisonFields();
 run();

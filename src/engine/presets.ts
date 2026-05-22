@@ -53,7 +53,7 @@ const GENERIC_PRESETS: LoanPreset[] = [
   {
     id: 'compare_20_vs_30',
     label: 'Comparație 20 vs 30 ani · 250.000 RON',
-    description: 'Scenariu pentru „termen scurt vs lung + extra” la același flux lunar.',
+    description: '250.000 RON, sumă lunară derivată din ~20 ani vs termen 30 ani + extra.',
     snapshot: {
       principal: 250_000,
       currency: 'RON',

@@ -125,6 +125,24 @@ header h1 {
   min-width: 220px;
 }
 
+.input-inline {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.input-inline input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-inline {
+  flex-shrink: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .preset-desc {
   flex: 1 1 100%;
   margin: 0;

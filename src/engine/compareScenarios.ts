@@ -1,6 +1,5 @@
-import { amortize, effectiveAnnualRate } from './amortize.ts';
-import { termMonthsFromTargetPayment } from './termFromPayment.ts';
-import type { ComparisonInputs, ComparisonResult, ScenarioSummary } from './types.ts';
+import { amortize } from './amortize.ts';
+import type { ComparisonInputs, ComparisonResult, ExtraStrategy, RateConfig, RepaymentType, ScenarioSummary } from './types.ts';
 
 function buildSummary(
   label: string,
@@ -22,91 +21,100 @@ function buildSummary(
   };
 }
 
+/** Plată extra = sumă țintă − rata contractuală la acel termen (≥ 0). */
+export function extraFromTargetMonthly(
+  contractualPayment: number,
+  targetMonthlyPayment: number,
+): number {
+  return Math.max(0, targetMonthlyPayment - contractualPayment);
+}
+
+function contractualPaymentAtTerm(
+  principal: number,
+  termMonths: number,
+  repaymentType: RepaymentType,
+  rate: RateConfig,
+): number {
+  return amortize({
+    principal,
+    termMonths,
+    repaymentType,
+    rate,
+    extraMonthly: 0,
+  }).firstPayment;
+}
+
+function amortizeWithTargetExtra(
+  principal: number,
+  termMonths: number,
+  repaymentType: RepaymentType,
+  rate: RateConfig,
+  targetMonthlyPayment: number,
+  extraStrategy: ExtraStrategy,
+): { result: ReturnType<typeof amortize>; contractual: number; extra: number } {
+  const contractual = contractualPaymentAtTerm(principal, termMonths, repaymentType, rate);
+  const extra = extraFromTargetMonthly(contractual, targetMonthlyPayment);
+  const result = amortize({
+    principal,
+    termMonths,
+    repaymentType,
+    rate,
+    extraMonthly: extra,
+    extraStrategy,
+  });
+  return { result, contractual, extra };
+}
+
 export function compareScenarios(inputs: ComparisonInputs): ComparisonResult {
   const {
     principal,
     repaymentType,
     rate,
+    termShortMonths,
     termLongMonths,
-    comparisonMode = 'monthly_budget',
+    targetMonthlyPayment,
     extraStrategy = 'shorten_term',
   } = inputs;
 
-  const annualRate = effectiveAnnualRate(rate, 1);
-  let termShortMonths = inputs.termShortMonths;
-  let computedShortTermMonths: number | undefined;
-
-  if (comparisonMode === 'monthly_budget') {
-    const target = inputs.targetMonthlyPayment ?? 0;
-    const computed = termMonthsFromTargetPayment(
-      principal,
-      annualRate,
-      target,
-      repaymentType,
-    );
-    if (computed == null) {
-      throw new Error(
-        'Bugetul lunar este prea mic pentru a acoperi dobânda. Mărește suma sau verifică dobânda.',
-      );
-    }
-    termShortMonths = computed;
-    computedShortTermMonths = computed;
-  }
-
-  const resultA = amortize({
+  const short = amortizeWithTargetExtra(
     principal,
-    termMonths: termShortMonths,
+    termShortMonths,
     repaymentType,
     rate,
-    extraMonthly: 0,
-  });
+    targetMonthlyPayment,
+    extraStrategy,
+  );
 
-  const mHigh = resultA.firstPayment;
-
-  const resultBBase = amortize({
+  const long = amortizeWithTargetExtra(
     principal,
-    termMonths: termLongMonths,
+    termLongMonths,
     repaymentType,
     rate,
-    extraMonthly: 0,
-  });
+    targetMonthlyPayment,
+    extraStrategy,
+  );
 
-  const mLow = resultBBase.firstPayment;
-
-  let extraMonthly = 0;
-  let resultB = resultBBase;
-
-  if (comparisonMode === 'fixed_terms') {
-    extraMonthly = inputs.extraMonthly ?? Math.max(0, mHigh - mLow);
-    resultB = amortize({
-      principal,
-      termMonths: termLongMonths,
-      repaymentType,
-      rate,
-      extraMonthly,
-      extraStrategy,
-    });
-  }
-
-  const labelA =
-    comparisonMode === 'monthly_budget' ? 'Termen scurt (buget lunar)' : 'Termen scurt';
-  const labelB =
-    comparisonMode === 'monthly_budget' ? 'Termen lung (contractual)' : 'Termen lung + extra';
-
-  const scenarioA = buildSummary(labelA, termShortMonths, mHigh, 0, resultA);
-  const scenarioB = buildSummary(labelB, termLongMonths, mLow, extraMonthly, resultB);
-
-  const matchedMonthlyOutflow =
-    comparisonMode === 'monthly_budget' ? inputs.targetMonthlyPayment ?? mHigh : mHigh;
+  const scenarioA = buildSummary(
+    'Termen scurt + extra',
+    termShortMonths,
+    short.contractual,
+    short.extra,
+    short.result,
+  );
+  const scenarioB = buildSummary(
+    'Termen lung + extra',
+    termLongMonths,
+    long.contractual,
+    long.extra,
+    long.result,
+  );
 
   return {
-    comparisonMode,
-    computedShortTermMonths,
     scenarioA,
     scenarioB,
     interestDelta: scenarioB.totalInterest - scenarioA.totalInterest,
     totalPaidDelta: scenarioB.totalPaid - scenarioA.totalPaid,
     monthsDelta: scenarioB.payoffMonths - scenarioA.payoffMonths,
-    matchedMonthlyOutflow,
+    matchedMonthlyOutflow: targetMonthlyPayment,
   };
 }
