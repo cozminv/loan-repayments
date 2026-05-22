@@ -46,6 +46,8 @@ export interface AmortizationResult {
   payoffMonths: number;
 }
 
+export type ScenarioMode = 'prepay' | 'invest';
+
 export interface ComparisonInputs {
   principal: number;
   repaymentType: RepaymentType;
@@ -54,28 +56,44 @@ export interface ComparisonInputs {
   termLongMonths: number;
   targetMonthlyPayment: number;
   extraStrategy?: ExtraStrategy;
+  investRatePercent: number;
+  capitalGainsTaxPercent?: number;
   dayCountConvention?: DayCountConvention;
 }
 
 export interface ScenarioSummary {
   label: string;
+  mode: ScenarioMode;
   termMonths: number;
   contractualPayment: number;
+  /** Prepay on loan (0 for invest mode) */
   extraMonthly: number;
+  /** Monthly amount invested instead of prepay */
+  investMonthly: number;
   totalMonthly: number;
   payoffMonths: number;
   totalInterest: number;
   totalPaid: number;
+  /** FV of surplus invested at expected rate (invest mode) */
+  investValue?: number;
   result: AmortizationResult;
 }
 
 export interface ComparisonResult {
+  scenarioShortPrepay: ScenarioSummary;
+  scenarioLongPrepay: ScenarioSummary;
+  scenarioShortInvest: ScenarioSummary;
+  scenarioLongInvest: ScenarioSummary;
+  /** @deprecated use scenarioShortPrepay */
   scenarioA: ScenarioSummary;
+  /** @deprecated use scenarioLongPrepay */
   scenarioB: ScenarioSummary;
   interestDelta: number;
   totalPaidDelta: number;
   monthsDelta: number;
   matchedMonthlyOutflow: number;
+  /** Luna finală pentru simularea investiției (= termen contractual lung) */
+  investHorizonMonths: number;
 }
 
 export interface InvestOptions {

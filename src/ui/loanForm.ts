@@ -18,6 +18,8 @@ export interface LoanFormValues {
   termShortYears: number;
   termLongYears: number;
   extraStrategy: ExtraStrategy;
+  expectedReturnPercent: number;
+  applyCapitalGainsTax: boolean;
 }
 
 const FIELD_IDS = {
@@ -33,7 +35,13 @@ const FIELD_IDS = {
   termShort: 'termShort',
   termLong: 'termLong',
   extraStrategy: 'extraStrategy',
+  expectedReturn: 'expectedReturn',
+  applyTax: 'applyTax',
 } as const;
+
+function checkbox(id: string): HTMLInputElement {
+  return document.getElementById(id) as HTMLInputElement;
+}
 
 function input(id: string): HTMLInputElement {
   return document.getElementById(id) as HTMLInputElement;
@@ -57,6 +65,8 @@ export function readFormValues(): LoanFormValues {
     termShortYears: parseInt(input(FIELD_IDS.termShort).value, 10),
     termLongYears: parseInt(input(FIELD_IDS.termLong).value, 10),
     extraStrategy: select(FIELD_IDS.extraStrategy).value as ExtraStrategy,
+    expectedReturnPercent: parseFloat(input(FIELD_IDS.expectedReturn).value),
+    applyCapitalGainsTax: checkbox(FIELD_IDS.applyTax).checked,
   };
 }
 
@@ -189,6 +199,12 @@ export function loadFormFromStorage(): boolean {
       input(FIELD_IDS.targetMonthly).value = String(v.targetMonthlyPayment);
     }
     if (v.extraStrategy) select(FIELD_IDS.extraStrategy).value = v.extraStrategy;
+    if (v.expectedReturnPercent != null) {
+      input(FIELD_IDS.expectedReturn).value = String(v.expectedReturnPercent);
+    }
+    if (v.applyCapitalGainsTax != null) {
+      checkbox(FIELD_IDS.applyTax).checked = v.applyCapitalGainsTax;
+    }
     return true;
   } catch {
     return false;

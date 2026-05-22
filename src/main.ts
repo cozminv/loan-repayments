@@ -10,6 +10,7 @@ import { getPreset, LOAN_PRESETS, type PresetId } from './engine/presets.ts';
 import { compareScenarios } from './engine/compareScenarios.ts';
 import { amortize } from './engine/amortize.ts';
 import { analyzeInvestVsPrepay } from './engine/investBreakeven.ts';
+import type { RateConfig, ScenarioSummary } from './engine/types.ts';
 import {
   applyFormSnapshot,
   loadFormFromStorage,
@@ -20,9 +21,14 @@ import {
   type LoanFormValues,
 } from './ui/loanForm.ts';
 import { formValuesToRateConfig } from './ui/rateConfig.ts';
-import { formatMoney, formatMonths, formatPercent } from './utils/format.ts';
-import { renderComparisonChart } from './ui/charts.ts';
+import { formatMoney, formatPercent } from './utils/format.ts';
+import {
+  chartColorsForSeries,
+  renderInvestWealthChart,
+  renderPrepayChart,
+} from './ui/charts.ts';
 import { renderScheduleTable } from './ui/scheduleTable.ts';
+import { renderScenarioCard } from './ui/scenarioCard.ts';
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -185,6 +191,8 @@ function run(): void {
     return;
   }
 
+  const taxPercent = v.applyCapitalGainsTax ? 10 : 0;
+
   const comparison = compareScenarios({
     principal: v.principal,
     repaymentType: v.repaymentType,
@@ -193,60 +201,133 @@ function run(): void {
     termLongMonths,
     targetMonthlyPayment: v.targetMonthlyPayment,
     extraStrategy: v.extraStrategy,
+    investRatePercent: v.expectedReturnPercent,
+    capitalGainsTaxPercent: taxPercent,
   });
 
-  const shortMonths = termShortMonths;
-
-  const { scenarioA: a, scenarioB: b, matchedMonthlyOutflow } = comparison;
+  const prepayShort = comparison.scenarioShortPrepay;
+  const prepayLong = comparison.scenarioLongPrepay;
+  const investShort = comparison.scenarioShortInvest;
+  const investLong = comparison.scenarioLongInvest;
+  const { matchedMonthlyOutflow, investHorizonMonths } = comparison;
 
   $('results').classList.remove('hidden');
   $('schedules').classList.remove('hidden');
 
   showPaymentCheck(v.currency, termLongMonths, v);
 
-  $('matchedOutflow').textContent = `Țintă ${formatMoney(matchedMonthlyOutflow, v.currency)}/lună · scurt ${formatMonths(shortMonths)}: ${formatMoney(a.contractualPayment, v.currency)} + extra ${formatMoney(a.extraMonthly, v.currency)} · lung ${formatMonths(termLongMonths)}: ${formatMoney(b.contractualPayment, v.currency)} + extra ${formatMoney(b.extraMonthly, v.currency)}`;
+  $('matchedOutflow').textContent = `Țintă ${formatMoney(matchedMonthlyOutflow, v.currency)}/lună la toate scenariile`;
 
-  const winner =
-    a.totalInterest < b.totalInterest
-      ? 'Termenul scurt economisește dobândă'
-      : b.totalInterest < a.totalInterest
-        ? 'Termenul lung + extra economisește dobândă'
-        : 'Același cost al dobânzii';
+  const winnerPrepay =
+    prepayShort.totalInterest < prepayLong.totalInterest
+      ? 'Prepay termen scurt: mai puțină dobândă decât prepay termen lung'
+      : prepayLong.totalInterest < prepayShort.totalInterest
+        ? 'Prepay termen lung: mai puțină dobândă decât prepay termen scurt'
+        : 'Prepay scurt/lung: același cost al dobânzii';
 
-  $('scenarioCards').innerHTML = `
-    <article class="card">
-      <h3>${a.label}</h3>
-      <dl>
-        <dt>Rată contractuală</dt><dd>${formatMoney(a.contractualPayment, v.currency)}</dd>
-        <dt>Extra</dt><dd>${formatMoney(a.extraMonthly, v.currency)}</dd>
-        <dt>Total lunar</dt><dd>${formatMoney(a.totalMonthly, v.currency)}</dd>
-        <dt>Durată</dt><dd>${formatMonths(a.payoffMonths)}</dd>
-        <dt>Dobândă totală</dt><dd>${formatMoney(a.totalInterest, v.currency)}</dd>
-        <dt>Total plătit</dt><dd>${formatMoney(a.totalPaid, v.currency)}</dd>
-      </dl>
-    </article>
-    <article class="card">
-      <h3>${b.label}</h3>
-      <dl>
-        <dt>Rată contractuală</dt><dd>${formatMoney(b.contractualPayment, v.currency)}</dd>
-        <dt>Extra</dt><dd>${formatMoney(b.extraMonthly, v.currency)}</dd>
-        <dt>Total lunar</dt><dd>${formatMoney(b.totalMonthly, v.currency)}</dd>
-        <dt>Durată</dt><dd>${formatMonths(b.payoffMonths)}</dd>
-        <dt>Dobândă totală</dt><dd>${formatMoney(b.totalInterest, v.currency)}</dd>
-        <dt>Total plătit</dt><dd>${formatMoney(b.totalPaid, v.currency)}</dd>
-      </dl>
-    </article>
-  `;
+  $('scenarioCards').innerHTML = [
+    prepayShort,
+    prepayLong,
+    investShort,
+    investLong,
+  ]
+    .map((s) => renderScenarioCard(s, v.currency, v.expectedReturnPercent))
+    .join('');
 
   const deltaInterest = comparison.interestDelta;
   $('deltaRow').innerHTML = `
-    <p><strong>Diferență dobândă:</strong> ${formatMoney(Math.abs(deltaInterest), v.currency)}
+    <p><strong>Prepay — diferență dobândă scurt vs lung:</strong> ${formatMoney(Math.abs(deltaInterest), v.currency)}
       ${deltaInterest > 0 ? '(mai mult la termen lung)' : deltaInterest < 0 ? '(mai mult la termen scurt)' : ''}</p>
-    <p><strong>Diferență durată:</strong> ${Math.abs(comparison.monthsDelta)} luni</p>
-    <p class="verdict">${winner}</p>
+    <p><strong>Prepay — diferență durată:</strong> ${Math.abs(comparison.monthsDelta)} luni</p>
+    <p class="verdict">${winnerPrepay}</p>
   `;
 
-  renderComparisonChart($('interestChart') as HTMLCanvasElement, a.result, b.result);
+  const colors = chartColorsForSeries(6);
+  renderPrepayChart(
+    $('prepayChart') as HTMLCanvasElement,
+    [
+      { label: prepayShort.label, result: prepayShort.result, ...colors[0]! },
+      { label: prepayLong.label, result: prepayLong.result, ...colors[1]! },
+    ],
+    v.currency,
+  );
+  const investChartSeries = [
+    {
+      label: investShort.label,
+      horizonMonths: investHorizonMonths,
+      payoffMonth: investShort.payoffMonths,
+      surplusMonthly: investShort.investMonthly,
+      targetMonthly: matchedMonthlyOutflow,
+      investRatePercent: v.expectedReturnPercent,
+      capitalGainsTaxPercent: taxPercent,
+      ...colors[2]!,
+    },
+    {
+      label: investLong.label,
+      horizonMonths: investHorizonMonths,
+      payoffMonth: investLong.payoffMonths,
+      surplusMonthly: investLong.investMonthly,
+      targetMonthly: matchedMonthlyOutflow,
+      investRatePercent: v.expectedReturnPercent,
+      capitalGainsTaxPercent: taxPercent,
+      ...colors[3]!,
+    },
+  ];
+  investChartSeries.push(
+    {
+      label: 'Termen scurt prepay → investiție',
+      horizonMonths: investHorizonMonths,
+      payoffMonth: prepayShort.payoffMonths,
+      surplusMonthly: 0,
+      targetMonthly: matchedMonthlyOutflow,
+      investRatePercent: v.expectedReturnPercent,
+      capitalGainsTaxPercent: taxPercent,
+      ...colors[4]!,
+    },
+    {
+      label: 'Termen lung prepay → investiție',
+      horizonMonths: investHorizonMonths,
+      payoffMonth: prepayLong.payoffMonths,
+      surplusMonthly: 0,
+      targetMonthly: matchedMonthlyOutflow,
+      investRatePercent: v.expectedReturnPercent,
+      capitalGainsTaxPercent: taxPercent,
+      ...colors[5]!,
+    },
+  );
+  renderInvestWealthChart($('investWealthChart') as HTMLCanvasElement, investChartSeries, v.currency);
+
+  renderInvestSection(v, termLongMonths, rate, prepayLong, matchedMonthlyOutflow, taxPercent, investHorizonMonths);
+  renderScheduleTable($('scheduleShortPrepay'), prepayShort.result, v.currency, prepayShort.label);
+  renderScheduleTable($('scheduleLongPrepay'), prepayLong.result, v.currency, prepayLong.label);
+  renderScheduleTable($('scheduleShortInvest'), investShort.result, v.currency, investShort.label);
+  renderScheduleTable($('scheduleLongInvest'), investLong.result, v.currency, investLong.label);
+}
+
+function renderInvestSection(
+  v: LoanFormValues,
+  termLongMonths: number,
+  rate: RateConfig,
+  longPrepay: ScenarioSummary,
+  targetMonthly: number,
+  taxPercent: number,
+  investHorizonMonths: number,
+): void {
+  const section = $('invest-section');
+  section.classList.remove('hidden');
+
+  const investExtra = longPrepay.extraMonthly;
+  const intro = $('investIntro');
+  const tbody = document.querySelector('#sensitivityTable tbody')!;
+
+  if (investExtra <= 0) {
+    intro.textContent = `Suma țintă (${formatMoney(targetMonthly, v.currency)}/lună) nu depășește rata contractuală la termen lung (${formatMoney(longPrepay.contractualPayment, v.currency)}). Mărește suma țintă pentru a compara investiția cu prepay.`;
+    $('breakevenSummary').innerHTML = '';
+    tbody.innerHTML = '';
+    return;
+  }
+
+  intro.textContent = `Suma țintă: ${formatMoney(targetMonthly, v.currency)}/lună → surplus la termen lung (de investit sau prepay): ${formatMoney(investExtra, v.currency)}/lună (= țintă − ${formatMoney(longPrepay.contractualPayment, v.currency)} contractual). Vezi și cardurile „+ investiție” în comparație.`;
 
   const baselineLong = amortize({
     principal: v.principal,
@@ -256,49 +337,50 @@ function run(): void {
     extraMonthly: 0,
   });
 
-  const applyTax = ($('applyTax') as HTMLInputElement).checked;
-  const postPayoffRedirect = ($('postPayoffRedirect') as HTMLInputElement).checked;
-  const expectedReturn = parseFloat(($('expectedReturn') as HTMLInputElement).value);
-
   const invest = analyzeInvestVsPrepay(
     baselineLong,
-    b.result,
+    longPrepay.result,
     {
-      extraMonthly: b.extraMonthly,
-      horizonMonths: b.payoffMonths,
-      capitalGainsTaxPercent: applyTax ? 10 : 0,
-      postPayoffRedirect,
-      redirectMonthly: postPayoffRedirect ? matchedMonthlyOutflow : 0,
+      extraMonthly: investExtra,
+      horizonMonths: investHorizonMonths,
+      capitalGainsTaxPercent: taxPercent,
+      postPayoffRedirect: true,
+      redirectMonthly: targetMonthly,
     },
-    expectedReturn,
+    v.expectedReturnPercent,
   );
 
+  const verdictAtExpected =
+    invest.atRate != null
+      ? invest.atRate.delta < 0
+        ? `La randamentul așteptat de ${formatPercent(v.expectedReturnPercent)}, <strong>prepay</strong> este mai bun cu ${formatMoney(Math.abs(invest.atRate.delta), v.currency)}.`
+        : `La randamentul așteptat de ${formatPercent(v.expectedReturnPercent)}, <strong>investiția</strong> este mai bună cu ${formatMoney(Math.abs(invest.atRate.delta), v.currency)}.`
+      : '';
+
   $('breakevenSummary').innerHTML = `
-    <p><strong>Dobândă economisită</strong> (extra vs fără extra): ${formatMoney(invest.interestSaved, v.currency)}</p>
-    <p><strong>Randament de echilibru:</strong> ${formatPercent(invest.breakEvenRatePercent)} / an</p>
-    ${
-      invest.atRate
-        ? `<p>La ${formatPercent(expectedReturn)}: ${invest.atRate.delta >= 0 ? 'investiția câștigă' : 'prepay câștigă'} cu ${formatMoney(Math.abs(invest.atRate.delta), v.currency)}.</p>`
-        : ''
-    }
+    <p><strong>Surplus lunar (din suma țintă):</strong> ${formatMoney(investExtra, v.currency)}</p>
+    <p><strong>Dobândă economisită</strong> dacă mergi pe prepay la termen lung: ${formatMoney(invest.interestSaved, v.currency)}</p>
+    <p><strong>Randament de echilibru (ROI):</strong> ${formatPercent(invest.breakEvenRatePercent)} / an — sub această valoare prepay câștigă, peste ea investiția.</p>
+    ${verdictAtExpected ? `<p class="verdict">${verdictAtExpected}</p>` : ''}
   `;
 
-  const tbody = document.querySelector('#sensitivityTable tbody')!;
   tbody.innerHTML = invest.sensitivity
-    .map(
-      (row) => `
-    <tr>
-      <td>${formatPercent(row.ratePercent, 1)}</td>
+    .map((row) => {
+      const isBreakEven =
+        Math.abs(row.ratePercent - invest.breakEvenRatePercent) < 0.75;
+      const isExpected =
+        invest.atRate != null && Math.abs(row.ratePercent - v.expectedReturnPercent) < 0.25;
+      const rowClass = isBreakEven || isExpected ? ' class="highlight-row"' : '';
+      return `
+    <tr${rowClass}>
+      <td>${formatPercent(row.ratePercent, 1)}${isBreakEven ? ' (echilibru)' : ''}${isExpected ? ' (așteptat)' : ''}</td>
       <td>${formatMoney(row.investValue, v.currency)}</td>
       <td>${formatMoney(invest.interestSaved, v.currency)}</td>
       <td>${formatMoney(row.delta, v.currency)}</td>
       <td>${row.prepayWins ? 'Prepay' : 'Investiție'}</td>
-    </tr>`,
-    )
+    </tr>`;
+    })
     .join('');
-
-  renderScheduleTable($('scheduleA'), a.result, v.currency, 'Termen scurt');
-  renderScheduleTable($('scheduleB'), b.result, v.currency, 'Termen lung + extra');
 }
 
 function bindFormListeners(): void {
@@ -335,6 +417,14 @@ function bindFormListeners(): void {
       loadedExamplePayment = null;
     });
   }
+
+  const recalcIfResultsVisible = () => {
+    if (!$('results').classList.contains('hidden')) run();
+  };
+  $('expectedReturn').addEventListener('input', recalcIfResultsVisible);
+  $('expectedReturn').addEventListener('change', recalcIfResultsVisible);
+  $('applyTax').addEventListener('change', recalcIfResultsVisible);
+  $('applyTax').addEventListener('click', recalcIfResultsVisible);
 }
 
 initTheme();

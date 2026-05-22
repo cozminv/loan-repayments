@@ -7,6 +7,15 @@ import { analyzeInvestVsPrepay } from '../src/engine/investBreakeven.ts';
 import { amortize } from '../src/engine/amortize.ts';
 import { annuityPayment } from '../src/engine/annuity.ts';
 
+const baseInputs = {
+  principal: 300_000,
+  repaymentType: 'annuity' as const,
+  rate: { mode: 'fixed' as const, fixedRatePercent: 7.58 },
+  termShortMonths: 240,
+  termLongMonths: 360,
+  investRatePercent: 7,
+};
+
 describe('extraFromTargetMonthly', () => {
   it('is target minus contractual payment, floored at 0', () => {
     expect(extraFromTargetMonthly(1800, 2500)).toBe(700);
@@ -15,68 +24,57 @@ describe('extraFromTargetMonthly', () => {
 });
 
 describe('compareScenarios', () => {
-  it('both scenarios match target when extra bridges contractual rates', () => {
-    const principal = 300_000;
-    const rate = 7.58;
-    const termShortMonths = 240;
-    const termLongMonths = 360;
-    const target = annuityPayment(principal, rate, termShortMonths);
-
+  it('returns four scenarios: short/long prepay and invest', () => {
+    const target = annuityPayment(300_000, 7.58, 240);
     const c = compareScenarios({
-      principal,
-      repaymentType: 'annuity',
-      rate: { mode: 'fixed', fixedRatePercent: rate },
-      termShortMonths,
-      termLongMonths,
+      ...baseInputs,
       targetMonthlyPayment: target,
     });
 
-    expect(c.scenarioA.totalMonthly).toBeCloseTo(target, 0);
-    expect(c.scenarioB.totalMonthly).toBeCloseTo(target, 0);
-    expect(c.scenarioA.extraMonthly).toBe(0);
-    expect(c.scenarioB.extraMonthly).toBeGreaterThan(0);
+    expect(c.scenarioShortPrepay.mode).toBe('prepay');
+    expect(c.scenarioLongPrepay.mode).toBe('prepay');
+    expect(c.scenarioShortInvest.mode).toBe('invest');
+    expect(c.scenarioLongInvest.mode).toBe('invest');
+    expect(c.scenarioShortPrepay.totalMonthly).toBeCloseTo(target, 0);
+    expect(c.scenarioLongPrepay.totalMonthly).toBeCloseTo(target, 0);
   });
 
-  it('short term extra is target minus short contractual payment', () => {
-    const principal = 300_000;
-    const rate = 7.58;
-    const termShortMonths = 120;
-    const termLongMonths = 360;
-    const shortPayment = annuityPayment(principal, rate, termShortMonths);
+  it('invest scenarios have no loan extra but invest monthly surplus', () => {
+    const shortPayment = annuityPayment(300_000, 7.58, 120);
     const target = shortPayment + 400;
 
     const c = compareScenarios({
-      principal,
-      repaymentType: 'annuity',
-      rate: { mode: 'fixed', fixedRatePercent: rate },
-      termShortMonths,
-      termLongMonths,
+      ...baseInputs,
+      termShortMonths: 120,
       targetMonthlyPayment: target,
     });
 
-    expect(c.scenarioA.extraMonthly).toBeCloseTo(400, 0);
-    expect(c.scenarioA.totalMonthly).toBeCloseTo(target, 0);
-    expect(c.scenarioB.extraMonthly).toBeGreaterThan(c.scenarioA.extraMonthly);
+    expect(c.scenarioShortInvest.extraMonthly).toBe(0);
+    expect(c.scenarioShortInvest.investMonthly).toBeCloseTo(400, 0);
+    expect(c.scenarioShortInvest.investValue).toBeGreaterThan(0);
+    expect(c.scenarioShortPrepay.extraMonthly).toBeCloseTo(400, 0);
   });
 
-  it('long term extra is target minus long contractual payment', () => {
-    const principal = 300_000;
-    const rate = 7.58;
-    const termLongMonths = 360;
-    const longPayment = annuityPayment(principal, rate, termLongMonths);
-    const target = longPayment + 500;
+  it('long prepay matches target when extra bridges contractual rates', () => {
+    const target = annuityPayment(300_000, 7.58, 240);
+    const longPayment = annuityPayment(300_000, 7.58, 360);
+    const extra = extraFromTargetMonthly(longPayment, target);
 
     const c = compareScenarios({
-      principal,
-      repaymentType: 'annuity',
-      rate: { mode: 'fixed', fixedRatePercent: rate },
-      termShortMonths: 200,
-      termLongMonths,
+      ...baseInputs,
       targetMonthlyPayment: target,
     });
 
-    expect(c.scenarioB.extraMonthly).toBeCloseTo(500, 0);
-    expect(c.scenarioB.totalMonthly).toBeCloseTo(target, 0);
+    expect(c.scenarioLongPrepay.extraMonthly).toBeCloseTo(extra, 0);
+    expect(c.scenarioLongPrepay.totalMonthly).toBeCloseTo(target, 0);
+  });
+
+  it('invest horizon matches contractual long term', () => {
+    const c = compareScenarios({
+      ...baseInputs,
+      targetMonthlyPayment: 2500,
+    });
+    expect(c.investHorizonMonths).toBe(baseInputs.termLongMonths);
   });
 });
 

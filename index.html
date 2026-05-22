@@ -134,9 +134,19 @@
                 <option value="reduce_payment">Reduce rata lunară</option>
               </select>
             </label>
+            <label>
+              Randament așteptat investiție (% / an)
+              <input type="number" id="expectedReturn" value="7" min="0" max="25" step="0.5" />
+            </label>
+            <label class="checkbox-field">
+              <span class="checkbox-field__row">
+                <input type="checkbox" id="applyTax" />
+                Impozit câștiguri de capital (10%)
+              </span>
+            </label>
           </div>
           <p class="hint">
-            Plată extra (scurt și lung) = sumă țintă − rata contractuală la acel termen.
+            Prepay: extra = țintă − rată contractuală. Investiția se calculează până la <strong>termenul contractual lung</strong>.
           </p>
         </fieldset>
 
@@ -170,28 +180,26 @@
         <p class="matched-outflow" id="matchedOutflow"></p>
         <div class="scenario-cards" id="scenarioCards"></div>
         <div class="delta-row" id="deltaRow"></div>
+        <h3 class="chart-heading">Prepay — dobândă cumulată pe credit</h3>
+        <p class="hint chart-hint chart-hint--tight">
+          Treci cu mouse-ul pe grafic pentru linie verticală și valorile tuturor scenariilor la aceeași lună.
+        </p>
         <div class="chart-box">
-          <canvas id="interestChart"></canvas>
+          <canvas id="prepayChart"></canvas>
+        </div>
+        <h3 class="chart-heading">Investiție — portofoliu cumulat</h3>
+        <p class="hint chart-hint">
+          Orizont: <strong>termen contractual lung</strong>. Axă comprimată jos / extinsă sus (RON^2,5). Treci cu mouse-ul pentru linie verticală și valorile tuturor scenariilor. Click pe legendă pentru a ascunde o curbă.
+        </p>
+        <div class="chart-box">
+          <canvas id="investWealthChart"></canvas>
         </div>
       </section>
 
       <section class="panel hidden" id="invest-section">
-        <h2>Investiție vs rambursare anticipată</h2>
+        <h2>Investiție vs prepay (din suma țintă)</h2>
+        <p class="hint" id="investIntro"></p>
         <p id="breakevenSummary"></p>
-        <div class="grid invest-options">
-          <label>
-            Randament așteptat (%)
-            <input type="number" id="expectedReturn" value="7" min="0" max="25" step="0.5" />
-          </label>
-          <label>
-            <input type="checkbox" id="applyTax" />
-            Impozit câștiguri de capital (10%)
-          </label>
-          <label>
-            <input type="checkbox" id="postPayoffRedirect" />
-            După achitare: investește rata eliberată
-          </label>
-        </div>
         <table class="sensitivity" id="sensitivityTable">
           <thead>
             <tr>
@@ -208,8 +216,10 @@
 
       <section class="panel hidden" id="schedules">
         <h2>Grafic de rambursare</h2>
-        <div id="scheduleA"></div>
-        <div id="scheduleB"></div>
+        <div id="scheduleShortPrepay"></div>
+        <div id="scheduleLongPrepay"></div>
+        <div id="scheduleShortInvest"></div>
+        <div id="scheduleLongInvest"></div>
       </section>
 
       <footer>
