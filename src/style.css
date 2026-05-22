@@ -130,6 +130,10 @@ header h1 {
   margin: 0;
 }
 
+.full-width {
+  grid-column: 1 / -1;
+}
+
 .fieldset {
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -9,6 +9,7 @@ describe('compareScenarios', () => {
       principal: 300_000,
       repaymentType: 'annuity',
       rate: { mode: 'fixed', fixedRatePercent: 7.58 },
+      comparisonMode: 'fixed_terms',
       termShortMonths: 240,
       termLongMonths: 360,
     });
@@ -21,6 +22,7 @@ describe('compareScenarios', () => {
       principal: 250_000,
       repaymentType: 'annuity',
       rate: { mode: 'fixed', fixedRatePercent: 6.5 },
+      comparisonMode: 'fixed_terms',
       termShortMonths: 120,
       termLongMonths: 360,
     });

@@ -1,5 +1,8 @@
 import type { LoanFormSnapshot } from '../engine/bankReferences.ts';
-import type { Currency, ExtraStrategy, RateMode, RepaymentType } from '../engine/types.ts';
+import { effectiveAnnualRate } from '../engine/amortize.ts';
+import { formValuesToRateConfig } from './rateConfig.ts';
+import { termMonthsFromTargetPayment } from '../engine/termFromPayment.ts';
+import type { ComparisonMode, Currency, ExtraStrategy, RateMode, RepaymentType } from '../engine/types.ts';
 
 export interface LoanFormValues {
   principal: number;
@@ -10,6 +13,8 @@ export interface LoanFormValues {
   fixedPeriodYears: number;
   irccPercent: number;
   marginPercent: number;
+  comparisonMode: ComparisonMode;
+  targetMonthlyPayment: number;
   termShortYears: number;
   termLongYears: number;
   extraOverride?: number;
@@ -25,6 +30,8 @@ const FIELD_IDS = {
   fixedPeriodYears: 'fixedPeriodYears',
   ircc: 'ircc',
   margin: 'margin',
+  comparisonMode: 'comparisonMode',
+  targetMonthly: 'targetMonthly',
   termShort: 'termShort',
   termLong: 'termLong',
   extraOverride: 'extraOverride',
@@ -50,6 +57,8 @@ export function readFormValues(): LoanFormValues {
     fixedPeriodYears: parseInt(input(FIELD_IDS.fixedPeriodYears).value, 10),
     irccPercent: parseFloat(input(FIELD_IDS.ircc).value),
     marginPercent: parseFloat(input(FIELD_IDS.margin).value),
+    comparisonMode: select(FIELD_IDS.comparisonMode).value as ComparisonMode,
+    targetMonthlyPayment: parseFloat(input(FIELD_IDS.targetMonthly).value),
     termShortYears: parseInt(input(FIELD_IDS.termShort).value, 10),
     termLongYears: parseInt(input(FIELD_IDS.termLong).value, 10),
     extraOverride: extraRaw ? parseFloat(extraRaw) : undefined,
@@ -93,6 +102,14 @@ export function toggleRateFields(): void {
   marginWrap?.classList.toggle('hidden', mode === 'fixed');
 
   updateEffectiveRateDisplay();
+  updateComputedTermHint();
+}
+
+export function toggleComparisonFields(): void {
+  const mode = select(FIELD_IDS.comparisonMode).value;
+  document.getElementById('monthlyBudgetFields')?.classList.toggle('hidden', mode !== 'monthly_budget');
+  document.getElementById('fixedTermsFields')?.classList.toggle('hidden', mode !== 'fixed_terms');
+  updateComputedTermHint();
 }
 
 export function updateEffectiveRateDisplay(): void {
@@ -108,33 +125,62 @@ export function updateEffectiveRateDisplay(): void {
   el.textContent = `Dobândă variabilă (IRCC + marjă): ${(ircc + margin).toFixed(2)}%`;
 }
 
-const STORAGE_KEY = 'loan-repayments-form-v1';
+export function updateComputedTermHint(): void {
+  const hint = document.getElementById('computedTermHint');
+  if (!hint || select(FIELD_IDS.comparisonMode).value !== 'monthly_budget') {
+    if (hint) hint.textContent = '';
+    return;
+  }
+
+  const v = readFormValues();
+  const rate = formValuesToRateConfig(v);
+  const annualRate = effectiveAnnualRate(rate, 1);
+  const months = termMonthsFromTargetPayment(
+    v.principal,
+    annualRate,
+    v.targetMonthlyPayment,
+    v.repaymentType,
+  );
+
+  if (months == null) {
+    hint.textContent = 'Bugetul lunar este prea mic — nu acoperă dobânda la această sumă.';
+    return;
+  }
+
+  const years = (months / 12).toFixed(1);
+  hint.textContent = `Termen scurt calculat: ${months} luni (≈ ${years} ani) la această rată lunară.`;
+}
+
+const STORAGE_KEY = 'loan-repayments-form-v2';
 
 export function saveFormToStorage(): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(readFormValues()));
   } catch {
-    /* ignore quota / private mode */
+    /* ignore */
   }
 }
 
 export function loadFormFromStorage(): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('loan-repayments-form-v1');
     if (!raw) return false;
-    const v = JSON.parse(raw) as LoanFormValues;
+    const v = JSON.parse(raw) as Partial<LoanFormValues>;
     applyFormSnapshot({
-      principal: v.principal,
-      currency: v.currency,
-      repaymentType: v.repaymentType,
-      rateMode: v.rateMode,
+      principal: v.principal ?? 300000,
+      currency: v.currency ?? 'RON',
+      repaymentType: v.repaymentType ?? 'annuity',
+      rateMode: v.rateMode ?? 'variable',
       fixedRatePercent: v.fixedRatePercent,
       fixedPeriodYears: v.fixedPeriodYears,
       irccPercent: v.irccPercent,
       marginPercent: v.marginPercent,
-      termShortYears: v.termShortYears,
-      termLongYears: v.termLongYears,
+      termShortYears: v.termShortYears ?? 20,
+      termLongYears: v.termLongYears ?? 30,
     });
+    if (v.comparisonMode) select(FIELD_IDS.comparisonMode).value = v.comparisonMode;
+    if (v.targetMonthlyPayment) input(FIELD_IDS.targetMonthly).value = String(v.targetMonthlyPayment);
+    toggleComparisonFields();
     return true;
   } catch {
     return false;
