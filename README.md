@@ -12,7 +12,17 @@ npm install
 npm run dev
 ```
 
-Vite prints a local URL, usually **http://localhost:5173/loan-repayments/** — open that in your browser.
+Vite opens **http://localhost:5173/loan-repayments/** (the `/loan-repayments/` path is required — same as GitHub Pages).
+
+To match production locally after a build:
+
+```bash
+npm run build && npm run preview
+```
+
+Then open **http://localhost:4173/loan-repayments/** (not the server root).
+
+Use **https://cozminv.github.io/loan-repayments** (with or without trailing slash). If styles look missing, hard-refresh once (Ctrl+Shift+R).
 
 | Command | Purpose |
 |---------|---------|
