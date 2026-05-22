@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Comparator credite ipotecare — România</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Comparator rambursare credit ipotecar</h1>
+        <p class="subtitle">
+          Introdu parametrii din oferta băncii (ESIS / grafic de rambursare) · Compară scenarii de plată
+        </p>
+      </header>
+
+      <section class="panel" id="loan-setup">
+        <h2>Parametri credit</h2>
+
+        <div class="preset-bar">
+          <label>
+            Preset (punct de plecare)
+            <select id="quickPreset"></select>
+          </label>
+          <button type="button" id="applyPreset" class="secondary">Aplică preset</button>
+          <p class="hint preset-desc" id="presetDescription"></p>
+        </div>
+
+        <fieldset class="fieldset">
+          <legend>Împrumut</legend>
+          <div class="grid">
+            <label>
+              Sumă împrumutată
+              <input type="number" id="principal" value="300000" min="1000" step="1000" />
+            </label>
+            <label>
+              Monedă
+              <select id="currency">
+                <option value="RON" selected>RON</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </label>
+            <label>
+              Tip rambursare
+              <select id="repaymentType">
+                <option value="annuity" selected>Rate egale (anuități)</option>
+                <option value="decreasing">Rate descrescătoare</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Dobândă</legend>
+          <div class="grid">
+            <label>
+              Tip dobândă
+              <select id="rateMode">
+                <option value="fixed">Fixă (toată perioada)</option>
+                <option value="variable" selected>Variabilă (IRCC + marjă)</option>
+                <option value="fixed_then_variable">Fixă, apoi variabilă</option>
+              </select>
+            </label>
+            <label id="fixedRateWrap" class="hidden">
+              Dobândă fixă (%)
+              <input type="number" id="fixedRate" value="7.58" min="0" max="30" step="0.01" />
+            </label>
+            <label id="fixedPeriodWrap" class="hidden">
+              Durată dobândă fixă (ani)
+              <input type="number" id="fixedPeriodYears" value="3" min="0" max="15" step="1" />
+            </label>
+          </div>
+          <div class="grid" id="variableRateFields">
+            <label id="irccWrap">
+              IRCC (%)
+              <input type="number" id="ircc" value="5.58" min="0" max="20" step="0.01" />
+            </label>
+            <label id="marginWrap">
+              Marjă bancă (%)
+              <input type="number" id="margin" value="2" min="0" max="10" step="0.01" />
+            </label>
+          </div>
+          <p class="hint">
+            IRCC actual pe site-ul
+            <a href="https://www.bnr.ro/nbrfxrates.aspx" target="_blank" rel="noopener">BNR</a>.
+            Copiază valorile din oferta ta (ESIS), nu din simulări generice.
+          </p>
+          <p id="effectiveRate" class="effective-rate"></p>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Comparație termen</legend>
+          <div class="grid">
+            <label>
+              Termen scurt (ani)
+              <input type="number" id="termShort" value="20" min="1" max="35" />
+            </label>
+            <label>
+              Termen lung (ani)
+              <input type="number" id="termLong" value="30" min="1" max="35" />
+            </label>
+            <label>
+              Plată extra lunară (opțional)
+              <input type="number" id="extraOverride" placeholder="Auto: diferența ratelor" min="0" step="10" />
+            </label>
+            <label>
+              La plată extra
+              <select id="extraStrategy">
+                <option value="shorten_term" selected>Scurtează perioada</option>
+                <option value="reduce_payment">Reduce rata lunară</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <details class="bank-refs panel-inset">
+          <summary>Referințe bănci (calculatoare & exemple publice)</summary>
+          <p class="hint">
+            Nu putem prelua automat date de pe site-urile băncilor (CORS / autentificare). Deschide
+            calculatorul oficial, notează suma, dobânda și termenul, apoi completează formularul de mai sus.
+            Poți încărca un exemplu publicat de bancă (snapshot static, verificat manual).
+          </p>
+          <div class="bank-ref-toolbar">
+            <label>
+              Bancă
+              <select id="bankReference"></select>
+            </label>
+            <button type="button" id="openBankCalculator" class="secondary">Deschide calculator bancă</button>
+            <button type="button" id="loadBankExample" class="secondary">Încarcă exemplu publicat</button>
+          </div>
+          <p id="bankRefMeta" class="hint"></p>
+        </details>
+
+        <p id="paymentCheck" class="bank-validation hidden" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" id="calculate" class="primary">Calculează</button>
+          <button type="button" id="saveParams" class="secondary">Salvează parametrii</button>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="results">
+        <h2>Comparație scenarii</h2>
+        <p class="matched-outflow" id="matchedOutflow"></p>
+        <div class="scenario-cards" id="scenarioCards"></div>
+        <div class="delta-row" id="deltaRow"></div>
+        <div class="chart-box">
+          <canvas id="interestChart"></canvas>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="invest-section">
+        <h2>Investiție vs rambursare anticipată</h2>
+        <p id="breakevenSummary"></p>
+        <div class="grid invest-options">
+          <label>
+            Randament așteptat (%)
+            <input type="number" id="expectedReturn" value="7" min="0" max="25" step="0.5" />
+          </label>
+          <label>
+            <input type="checkbox" id="applyTax" />
+            Impozit câștiguri de capital (10%)
+          </label>
+          <label>
+            <input type="checkbox" id="postPayoffRedirect" />
+            După achitare: investește rata eliberată
+          </label>
+        </div>
+        <table class="sensitivity" id="sensitivityTable">
+          <thead>
+            <tr>
+              <th>Randament</th>
+              <th>Investiție</th>
+              <th>Dobândă economisită</th>
+              <th>Diferență</th>
+              <th>Câștigător</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel hidden" id="schedules">
+        <h2>Grafic de rambursare</h2>
+        <div id="scheduleA"></div>
+        <div id="scheduleB"></div>
+      </section>
+
+      <footer>
+        <p>
+          Formula standard românească (anuități). Rambursare anticipată ipotecar: fără comision (OUG 52/2016).
+          Nu constituie consultanță financiară.
+        </p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
