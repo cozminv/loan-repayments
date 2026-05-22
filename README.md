@@ -34,9 +34,19 @@ Presets are starting points only; nothing is locked after you apply one.
 
 ## GitHub Pages
 
-Live (after deploy): `https://cozminv.github.io/loan-repayments/`
+Live URL (after deploy): **https://cozminv.github.io/loan-repayments/**
 
-Push to `main` with GitHub Pages source = **GitHub Actions**.
+### One-time setup (fixes deploy 404)
+
+The `deploy-pages` action returns **404 / Not Found** until Pages is enabled:
+
+1. Open **[Settings → Pages](https://github.com/cozminv/loan-repayments/settings/pages)**
+2. Under **Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”)
+3. Save, then re-run the failed workflow: **Actions → Deploy to GitHub Pages → Re-run all jobs**
+
+The first successful deploy creates the `github-pages` environment automatically.
+
+Push to `main` triggers deploy via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
 ## Features
 
