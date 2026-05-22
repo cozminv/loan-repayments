@@ -5,14 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Comparator credite ipotecare — România</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('loan-repayments-theme');
+          var dark = t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.dataset.theme = 'dark';
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app">
       <header>
-        <h1>Comparator rambursare credit ipotecar</h1>
-        <p class="subtitle">
-          Introdu parametrii din oferta băncii (ESIS / grafic de rambursare) · Compară scenarii de plată
-        </p>
+        <div class="header-text">
+          <h1>Comparator rambursare credit ipotecar</h1>
+          <p class="subtitle">
+            Introdu parametrii din oferta băncii (ESIS / grafic de rambursare) · Compară scenarii de plată
+          </p>
+        </div>
+        <button type="button" id="themeToggle" class="theme-toggle" aria-label="Temă sistem" title="Temă sistem">◐</button>
       </header>
 
       <section class="panel" id="loan-setup">

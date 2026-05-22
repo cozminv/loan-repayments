@@ -1,4 +1,6 @@
 import './style.css';
+import { bindThemeToggle, initTheme, onThemeChange } from './ui/theme.ts';
+import { refreshChartTheme } from './ui/charts.ts';
 import {
   BANK_REFERENCES,
   getBankReference,
@@ -348,6 +350,10 @@ function bindFormListeners(): void {
     });
   }
 }
+
+initTheme();
+bindThemeToggle();
+onThemeChange(() => refreshChartTheme());
 
 initQuickPresets();
 initBankReferences();
